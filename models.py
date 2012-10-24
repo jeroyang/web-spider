@@ -57,7 +57,7 @@ class Parser(threading.Thread):
                 tree = etree.fromstring(html, etree.HTMLParser())
                 urls = [urljoin(base, url) for url in tree.xpath('//a/@href') \
                                 if re.match(r'^http', urljoin(base, url))]
-                urls = random.sample(urls, min(15, len(urls)))
+                urls = random.sample(urls, min(5, len(urls)))
                 # do the url_is_seen test
                 for url in urls:
                     if not self._is_seen(url):
