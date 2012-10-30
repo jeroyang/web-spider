@@ -1,3 +1,7 @@
+# Spider specifics
+archive*
+seeds.txt
+
 *.py[co]
 
 # Packages
@@ -28,3 +32,4 @@ pip-log.txt
 
 #Mac OS
 .DS_Store
+

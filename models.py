@@ -7,46 +7,55 @@ import random
 import codecs
 import os
 from hashlib import md5
-from collections import Counter
+from collections import Counter, deque
 from lxml import etree
 from urlparse import urljoin, urlparse
+from urllib import quote
 from settings import *
 
 # Global variables in this module
 
-url_queue = Queue.Queue(maxsize=800)
+url_queue = Queue.Queue(maxsize=min(100, CRAWLER_NUMBER*3))
 parse_queue = Queue.Queue()
 store_queue = Queue.Queue()
-go_event = threading.Event()
 stop_event = threading.Event()
 sample_size = 5
 
+def filename_from_url(url):
+    """Return the tuple of path name and filename from a url"""
+    url_parts = urlparse(url.encode("utf-8"))
+    path = '/'.join(re.split(r'[.:]', url_parts.netloc)[::-1])
+    path = os.path.join('archives/', path)
+    
+    file_namer = md5()
+    file_namer.update(url_parts.path)
+    file_namer.update(url_parts.query)
+    file_namer.update(url_parts.fragment)
+    
+    return (path, file_namer.hexdigest())
+    
+
 class Crawler(threading.Thread):
     """A threaded web crawler, comsumming the url_queue and push to parse_ store_queue"""
-    global url_queue, parse_queue, store_queue, go_event
-
+    global url_queue, parse_queue, store_queue, stop_event
+        
     def run(self):
         while True:
-            try:
-                if go_event.is_set():            
-                    url = url_queue.get(True) # Get url from the url_queue
-                    start = time.time()
-                    try:
-                        html = urllib2.urlopen(url, timeout=5).read()
-                    except Exception as inst:
-                        Profiler.crawler_errors[inst.__str__()] += 1
-                        url_queue.task_done()
-                        break                
-                    response_time = time.time() - start
-                    print "%s INFO: %s" % (str(datetime.datetime.now())[0:19], re.sub(r'(.{48}).*', r'\1...', url))
-                    parse_queue.put((url, html, response_time))
-                    store_queue.put((url, html, datetime.datetime.now()))
+            try:          
+                url = url_queue.get(True) # Get url from the url_queue
+                start = time.time()
+                try:
+                    html = urllib2.urlopen(url, timeout=5).read()
+                except Exception as inst:
+                    Profiler.crawler_errors[inst.__str__()] += 1
                     url_queue.task_done()
-                else:
-                    stop_event.set()
-                    go_event.wait()
+                    break                
+                response_time = time.time() - start
+                print "%s INFO: %s" % (str(datetime.datetime.now())[0:19], re.sub(r'(.{48}).*', r'\1...', url))
+                parse_queue.put((url, html, response_time))
+                store_queue.put((url, html, datetime.datetime.now()))
+                url_queue.task_done()
                     
-
             except AttributeError:
                 pass
                    
@@ -59,8 +68,10 @@ class Parser(threading.Thread):
            if the url is not seen, update this url into repository"""
         if url in Profiler.seen_url:
             return True
+        elif os.path.isfile(os.path.join(*filename_from_url(url))):
+            return True
         else:
-            Profiler.seen_url.add(url)
+            Profiler.seen_url.appendleft(url)
             return False
 
     def run(self):
@@ -74,7 +85,6 @@ class Parser(threading.Thread):
                 urls = random.sample(urls, min(sample_size, len(urls)))
             except Exception as inst:
                 Profiler.parser_errors[inst.__str__()] += 1
-                parse_queue.task_done()
                 
             # do the url_is_seen test
             for url in urls:
@@ -82,7 +92,6 @@ class Parser(threading.Thread):
                     url_queue.put(url)
             parse_queue.task_done()
 
-    
 class Storer(threading.Thread):
     """A threaded page storer, save the html page in chunck"""
     def run(self):
@@ -90,39 +99,38 @@ class Storer(threading.Thread):
             # Get html page from the store_queue
             url, html, time = store_queue.get()
             Profiler.download_bytes += len(html)
-            url_parts = urlparse(url)
-            path = '/'.join(re.split(r'[.:]', url_parts.netloc)[::-1])
-            path = os.path.join('archives/', path)
-            
-            file_namer = md5()
-            file_namer.update(url_parts.path)
-            file_namer.update(url_parts.query)
-            file_namer.update(url_parts.fragment)
+            path, filename = filename_from_url(url)
             try:
                 if not os.path.exists(path):
                     os.makedirs(path)
-                with open(os.path.join(path, file_namer.hexdigest()), 'wb') as output_file:
+                with open(os.path.join(path, filename), 'wb') as output_file:
                     output_file.write(html)
                 Profiler.page_counter += 1
             except Exception as inst:
                 Profiler.parser_errors[inst.__str__()] += 1
+                
             store_queue.task_done()
 
 class Terminator(threading.Thread):
     def run(self):
-        global url_queue
-        print "%s **********Terminate the %i working threads gentally" % (str(datetime.datetime.now())[0:19], CRAWLER_NUMBER)
-        with codecs.open('seeds.txt', 'w', 'utf-8') as seed_file:
-            for i in range(500): # Save the queuing urls to seeds.txt
-                try:
-                    seed_file.write("%s\n" % url_queue.get())
-                except:
-                    pass
-                finally:
-                    url_queue.task_done()
-            while True:
-                url_queue.get()
-                url_queue.task_done()
+        global url_queue, stop_event
+        print "%s CRAWLER: Terminate the %i working threads gently" % (str(datetime.datetime.now())[0:19], CRAWLER_NUMBER)
+        seeds_txt = []
+        
+        for i in range(min(100, CRAWLER_NUMBER*2)): # Save the queuing urls to seeds.txt
+            url = url_queue.get()
+            #try:
+            seeds_txt.append(url.encode("utf-8"))
+            #except:
+                #pass
+            url_queue.task_done()
+        
+        with open('seeds.txt', 'wb') as seed_file:
+            seed_file.write("\n".join(seeds_txt))
+                
+        while True:
+            url_queue.get()
+            url_queue.task_done()
     
 class Logger(object):
     pass
@@ -131,7 +139,7 @@ class Profiler(object):
     crawler_errors = Counter()
     parser_errors = Counter()
     storer_errors = Counter()
-    seen_url = set()
+    seen_url = deque(maxlen=1000)
     page_counter = 0
     download_bytes = 0
     
