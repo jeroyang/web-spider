@@ -91,9 +91,9 @@ def main():
         
     except (KeyboardInterrupt, SystemExit):
         print "KeyboardIntterrupted, Stop the crawlers gracefully..."
-        m.stop_event.set()
     
     finally: 
+        m.stop_event.set()
         terminator = m.Terminator()
         terminator.daemon = True
         terminator.start()

@@ -12,7 +12,6 @@ EXCLUDE = r'(?i).*?/.*?\.(gz|tar|tgz|z|zip|exe|ps|doc|pdf|xplot|java|c|h|txt|ppt
 SEEDS = ['http://www.dmoz.org/', 
         'http://web.ncku.edu.tw/bin/home.php', 
         'http://dir.yahoo.com/', 
-        'http://tw.yahoo.com', 
         'http://www.usa.gov/',
         'http://australia.gov.au/',
         'http://vlib.org/'] # will be used whenever the seeds.txt is not exist or empty
