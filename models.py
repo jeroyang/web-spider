@@ -19,7 +19,6 @@ url_queue = Queue.Queue(maxsize=1000)
 parse_queue = Queue.Queue()
 store_queue = Queue.Queue()
 stop_event = threading.Event()
-sample_size = 5
 
 def filename_from_url(url):
     """Return the tuple of path name and filename from a url"""
@@ -61,7 +60,7 @@ class Crawler(threading.Thread):
                    
 class Parser(threading.Thread):
     """A threaded html parser, find possibly good url and push to url_queue"""
-    global url_queue, parse_queue, sample_size, stop_event
+    global url_queue, parse_queue, stop_event
 
     def _is_seen(self, url):
         """The is seen test of url, return ture if the url is seen, else return false, 
@@ -89,13 +88,13 @@ class Parser(threading.Thread):
                 tree = etree.fromstring(html, etree.HTMLParser())
                 urls = [urljoin(base, url) for url in tree.xpath('//a/@href') \
                             if re.match(r'^http.{,80}$', urljoin(base, url))]
-                urls = random.sample(urls, min(sample_size, len(urls)))
+                urls = random.sample(urls, min(SAMPLING_SIZE, len(urls)))
             except Exception as inst:
                 Profiler.parser_errors[inst.__str__()] += 1
                 
             # do the url_is_seen test, and exclude urls in EXCLUDE pattern
             for url in urls:
-                if not self._is_seen(url) or not self._is_excluded(url):
+                if not self._is_excluded(url) or not self._is_seen(url):
                     url_queue.put(url)
                     
             parse_queue.task_done()
