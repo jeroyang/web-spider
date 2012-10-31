@@ -28,7 +28,5 @@ How to run:
 
 Current problems:
 
-1. Difficulty in gently shutting down the threads, it takes one more minutes to stop.
-2. Primitive url seen test, I just put every seen url in memory, it will be explode after fetch a lot of websites.
-
+1. Stop crawling after the script was executed for a while, I cannot figure out why. 
 	

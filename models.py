@@ -23,7 +23,7 @@ sample_size = 5
 
 def filename_from_url(url):
     """Return the tuple of path name and filename from a url"""
-    url_parts = urlparse(url.encode("utf-8"))
+    url_parts = urlparse(url.encode("utf-8", 'replace'))
     path = '/'.join(re.split(r'[.:]', url_parts.netloc)[::-1])
     path = os.path.join('archives/', path)
     
@@ -61,7 +61,7 @@ class Crawler(threading.Thread):
                    
 class Parser(threading.Thread):
     """A threaded html parser, find possibly good url and push to url_queue"""
-    global url_queue, parse_queue, sample_size
+    global url_queue, parse_queue, sample_size, stop_event
 
     def _is_seen(self, url):
         """The is seen test of url, return ture if the url is seen, else return false, 
@@ -74,8 +74,14 @@ class Parser(threading.Thread):
             Profiler.seen_url.appendleft(url)
             return False
 
+    def _is_excluded(self, url):
+        if re.match(EXCLUDE, url):
+            return True
+        else:
+            return False
+        
     def run(self):
-        while True:
+        while not stop_event.is_set():
             base, html, r = parse_queue.get() # Get html page from the parse_queue, r is response_time
             urls = []
             try:
@@ -86,10 +92,11 @@ class Parser(threading.Thread):
             except Exception as inst:
                 Profiler.parser_errors[inst.__str__()] += 1
                 
-            # do the url_is_seen test
+            # do the url_is_seen test, and exclude urls in EXCLUDE pattern
             for url in urls:
-                if not self._is_seen(url):
+                if not self._is_seen(url) or not self._is_excluded(url):
                     url_queue.put(url)
+                    
             parse_queue.task_done()
 
 class Storer(threading.Thread):
@@ -115,18 +122,19 @@ class Terminator(threading.Thread):
     def run(self):
         global url_queue, stop_event
         print "%s CRAWLER: Terminate the %i working threads gently" % (str(datetime.datetime.now())[0:19], CRAWLER_NUMBER)
-        seeds_txt = []
+        remained_urls = deque()
         
-        for i in range(min(100, CRAWLER_NUMBER*2)): # Save the queuing urls to seeds.txt
+        for i in range(min(500, CRAWLER_NUMBER*2)): # Save the queuing urls to seeds.txt
             url = url_queue.get()
-            #try:
-            seeds_txt.append(url.encode("utf-8"))
-            #except:
-                #pass
+            remained_urls.append(url.encode("utf-8", 'replace'))
             url_queue.task_done()
         
-        with open('seeds.txt', 'wb') as seed_file:
-            seed_file.write("\n".join(seeds_txt))
+        with open('seeds.txt', 'w') as seed_file:
+            for url in remained_urls:
+                try:
+                    seed_file.write("%s\n" % url)
+                except Exception as inst:
+                    print inst
                 
         while True:
             url_queue.get()
