@@ -15,7 +15,7 @@ from settings import *
 
 # Global variables in this module
 
-url_queue = Queue.Queue(maxsize=min(100, CRAWLER_NUMBER*3))
+url_queue = Queue.Queue(maxsize=1000)
 parse_queue = Queue.Queue()
 store_queue = Queue.Queue()
 stop_event = threading.Event()
@@ -69,6 +69,7 @@ class Parser(threading.Thread):
         if url in Profiler.seen_url:
             return True
         elif os.path.isfile(os.path.join(*filename_from_url(url))):
+            Profiler.seen_url.appendleft(url)
             return True
         else:
             Profiler.seen_url.appendleft(url)
@@ -121,11 +122,14 @@ class Storer(threading.Thread):
 class Terminator(threading.Thread):
     def run(self):
         global url_queue, stop_event
-        print "%s CRAWLER: Terminate the %i working threads gently" % (str(datetime.datetime.now())[0:19], CRAWLER_NUMBER)
+        print "%s CRAWLER: Terminate the %i working threads gently..." % (str(datetime.datetime.now())[0:19], CRAWLER_NUMBER)
         remained_urls = deque()
         
-        for i in range(min(500, CRAWLER_NUMBER*2)): # Save the queuing urls to seeds.txt
-            url = url_queue.get()
+        while True: # Save the queuing urls to seeds.txt
+            try:
+                url = url_queue.get_nowait()
+            except Queue.Empty:
+                break
             remained_urls.append(url.encode("utf-8", 'replace'))
             url_queue.task_done()
         

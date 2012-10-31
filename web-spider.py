@@ -98,7 +98,7 @@ def main():
         terminator.daemon = True
         terminator.start()
         for crawler in crawler_pool:
-            crawler.join(0.01d)
+            crawler.join(0.1)
         m.url_queue.join()
         elapsed_time = time.time()-start
         _summary(elapsed_time)
