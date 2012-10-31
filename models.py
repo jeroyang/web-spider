@@ -15,7 +15,7 @@ from settings import *
 
 # Global variables in this module
 
-url_queue = Queue.Queue(maxsize=1000)
+url_queue = Queue.Queue(maxsize=URL_QUEUE_SIZE)
 parse_queue = Queue.Queue()
 store_queue = Queue.Queue()
 stop_event = threading.Event()
@@ -62,23 +62,23 @@ class Parser(threading.Thread):
     """A threaded html parser, find possibly good url and push to url_queue"""
     global url_queue, parse_queue, stop_event
 
-    def _is_seen(self, url):
+    def _is_new(self, url):
         """The is seen test of url, return ture if the url is seen, else return false, 
            if the url is not seen, update this url into repository"""
         if url in Profiler.seen_url:
-            return True
+            return False
         elif os.path.isfile(os.path.join(*filename_from_url(url))):
             Profiler.seen_url.appendleft(url)
-            return True
+            return False
         else:
             Profiler.seen_url.appendleft(url)
-            return False
-
-    def _is_excluded(self, url):
-        if re.match(EXCLUDE, url):
             return True
-        else:
+
+    def _is_valid(self, url):
+        if re.match(EXCLUDE, url):
             return False
+        else:
+            return True
         
     def run(self):
         while not stop_event.is_set():
@@ -94,7 +94,7 @@ class Parser(threading.Thread):
                 
             # do the url_is_seen test, and exclude urls in EXCLUDE pattern
             for url in urls:
-                if not self._is_excluded(url) or not self._is_seen(url):
+                if self._is_valid(url) and self._is_new(url):
                     url_queue.put(url)
                     
             parse_queue.task_done()

@@ -36,7 +36,7 @@ def _report(last_pages, last_bytes):
     current_pages = m.Profiler.page_counter
     current_bytes = m.Profiler.download_bytes
     print "%s REPORT: %i pages fetched. %.2f pages/s (%.2f KB/s)" % \
-                    (str(datetime.datetime.now())[0:19], current_pages, float(current_pages-last_pages)/20, float(current_bytes-last_bytes)/20000)
+                    (str(datetime.datetime.now())[0:19], current_pages, float(current_pages-last_pages)/REPORT_INTERVAL, float(current_bytes-last_bytes)/1000/REPORT_INTERVAL)
     if not m.stop_event.is_set():
         next_report = m.threading.Timer(REPORT_INTERVAL, _report, [current_pages, current_bytes])
         next_report.daemon = True
