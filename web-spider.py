@@ -5,6 +5,9 @@ import re
 import models as m
 import datetime
 from settings import *
+import threading
+
+crawler_pool = []
 
 def _load_seeds():
     """Load the seeds.txt"""
@@ -27,7 +30,7 @@ def _start_greeting():
     """Print some message about this crawler"""
     print "==========================================================="
     print "Web-spider Homework for NCKU-WRDU course, 2012"
-    print "CSIE-P78011167-YangChiaJung-HW3"
+    print "CSIE-P78011167-YangChiaJung-HW4"
     print "Yang Chia-Jung, email: jeroyang@gmail.com"
     print "==========================================================="
     print "Start fetching the web using %i threaded crawlers..." % CRAWLER_NUMBER
@@ -35,7 +38,11 @@ def _start_greeting():
 def _report(last_pages, last_bytes):
     current_pages = m.Profiler.page_counter
     current_bytes = m.Profiler.download_bytes
-    print "%s REPORT: %i pages fetched. %.2f pages/s (%.2f KB/s)" % \
+    rate = float(current_bytes-last_bytes)/1000/REPORT_INTERVAL
+    if rate == 0:
+        _doctor()
+    else:
+        print "%s REPORT: %i pages fetched. %.2f pages/s (%.2f KB/s)" % \
                     (str(datetime.datetime.now())[0:19], current_pages, float(current_pages-last_pages)/REPORT_INTERVAL, float(current_bytes-last_bytes)/1000/REPORT_INTERVAL)
     if not m.stop_event.is_set():
         next_report = m.threading.Timer(REPORT_INTERVAL, _report, [current_pages, current_bytes])
@@ -50,23 +57,36 @@ def _summary(elapsed_time):
     
 def _error():
     """Print error reports"""
-    print "Error Reports:\t", 
-    print "\t".join(["%s: %i" % (re.sub(r'.*(\d\d\d).*', r'   \1', error_type, flags=re.S), number) \
+    errors = ["%s: %i" % (re.sub(r'.*(\d\d\d).*', r'   \1', error_type, flags=re.S), number) \
                     for (error_type, number) in m.Profiler.crawler_errors.iteritems()\
-                    if error_type[0:4]=='HTTP'])
-    
+                    if error_type[0:4]=='HTTP']
+    if len(errors) > 0:
+        print "Error Reports:\t", 
+        print "\t".join(errors)
+
+def _doctor():
+    global crawler_pool
+    print "====DOCTOR===="
+    for thread in threading.enumerate():
+        print type(thread)
+
+
 def main():
     socket.setdefaulttimeout(SOCKET_TIMEOUT)
     start = time.time()
-    crawler_pool = []
+    global crawler_pool
     _start_greeting()
     _load_seeds()
     try:
         # Create a periodic reporter to show crawling summaries
-        m.threading.Timer(REPORT_INTERVAL, _report, [0, 0]).start()
+        next_report = m.threading.Timer(REPORT_INTERVAL, _report, [0, 0])
+        next_report.daemon = True
+        next_report.start()
     
         # Set stop_event later
-        m.threading.Timer(TIME_LIMIT, m.stop_event.set).start()
+        stop_timer = m.threading.Timer(TIME_LIMIT, m.stop_event.set)
+        stop_timer.daemon = True
+        stop_timer.start()
 
         """Set a pool of three kinds of threads to run"""
 
@@ -88,6 +108,11 @@ def main():
 
         while not m.stop_event.is_set():
             time.sleep(0.1)
+            if len([thread for thread in threading.enumerate() if isinstance(thread, m.Crawler)]) < CRAWLER_NUMBER:
+                crawler = m.Crawler()
+                crawler.daemon = True
+                crawler.start()
+                crawler_pool.append(crawler)
         
     except (KeyboardInterrupt, SystemExit):
         print "KeyboardIntterrupted, Stop the crawlers gracefully..."
@@ -97,12 +122,10 @@ def main():
         terminator = m.Terminator()
         terminator.daemon = True
         terminator.start()
-        for crawler in crawler_pool:
-            crawler.join(0.1)
         m.url_queue.join()
         elapsed_time = time.time()-start
         _summary(elapsed_time)
         _error()
-        print ''
+
     
 main()
